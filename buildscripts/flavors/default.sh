@@ -1,4 +1,19 @@
 #!/bin/bash -e
+#
+# Nightmare TV eklemeleri (2026-08-22): asagidaki configure cagrisina
+# yadif, bwdif ve spdif/mpegts/matroska eklendi.
+#
+# Sebep: stok derlemede HICBIR ayristirici ve HICBIR muxer yok. TR canli
+# kanallari 1080i25 geliyor, mpv "Creating filter 'yadif' failed" deyip
+# ham taramali kareyi basiyor: tarak disi cikiyor ve hareketin YARISI
+# atiliyor. Windows'ta tam donanimli bir libmpv ile olculdu: cikis
+# 25 -> 50 fps oldu, tarak disi kayboldu, sahibi dogruladi.
+#
+# Muxer yoklugu ayrica Ses Passthrough'u (ucretli ozellik) sessizce
+# donduruyor ve stream-record'u dosya uretemez birakiyor.
+#
+# yadif ve bwdif LGPL 2.1+, yani --disable-gpl durusu bozulmuyor.
+#
 
 . ../../include/depinfo.sh
 . ../../include/path.sh
@@ -222,6 +237,11 @@ cpuflags=
 	\
 	--enable-filter=overlay \
 	--enable-filter=equalizer \
+	--enable-filter=yadif \
+	--enable-filter=bwdif \
+	--enable-muxer=spdif \
+	--enable-muxer=mpegts \
+	--enable-muxer=matroska \
 	\
 	--enable-protocol=async \
 	--enable-protocol=cache \
