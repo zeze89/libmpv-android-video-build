@@ -242,6 +242,8 @@ cpuflags=
 	--enable-muxer=spdif \
 	--enable-muxer=mpegts \
 	--enable-muxer=matroska \
+	--enable-filter=dynaudnorm \
+	--enable-filter=loudnorm \
 	\
 	--enable-protocol=async \
 	--enable-protocol=cache \
