@@ -14,6 +14,16 @@
 #
 # yadif ve bwdif LGPL 2.1+, yani --disable-gpl durusu bozulmuyor.
 #
+# ALTYAPI FILTRELERI (2026-08-23, Windows tarafinda SAHADA olculdu):
+# yadif/bwdif TEK BASINA YETMIYOR. lavfi grafigi bicim donusumu icin scale
+# ariyor, bulamayinca grafigi KOMPLE iptal edip ayristiriciyi kapatiyor:
+#   ffmpeg: 'scale' filter not present, cannot convert formats
+#   lavfi: failed to configure the filter graph
+#   vf: Disabling filter userdeint because it has failed
+# Donanim kod cozmede (nv12) donusum zorunlu, yani sahada HER kanalda
+# tetikleniyor. Windows'ta win-v1 tam bu yuzden hicbir sey degistirmedi;
+# ikilide filtre adinin gecmesi kanit degil, grafigin kuruldugunu gormek sart.
+#
 
 . ../../include/depinfo.sh
 . ../../include/path.sh
@@ -239,6 +249,15 @@ cpuflags=
 	--enable-filter=equalizer \
 	--enable-filter=yadif \
 	--enable-filter=bwdif \
+	--enable-filter=scale \
+	--enable-filter=format \
+	--enable-filter=null \
+	--enable-filter=copy \
+	--enable-filter=setpts \
+	--enable-filter=aformat \
+	--enable-filter=aresample \
+	--enable-filter=anull \
+	--enable-filter=asetpts \
 	--enable-muxer=spdif \
 	--enable-muxer=mpegts \
 	--enable-muxer=matroska \
