@@ -24,6 +24,11 @@
 # tetikleniyor. Windows'ta win-v1 tam bu yuzden hicbir sey degistirmedi;
 # ikilide filtre adinin gecmesi kanit degil, grafigin kuruldugunu gormek sart.
 #
+# LGPL KARSILIKLAR (2026-10-10): select/decimate (tekrar kare ayiklama,
+# mpdecimate GPL), deblock (pp/spp ailesi GPL), fieldmatch (ters telesine,
+# pullup GPL). Hepsi LGPL 2.1+; uygulamada kendiliginden acilmaz. TV'lerdeki
+# gomulu yolda (mediacodec_embed) yazilim filtresi hic calismaz.
+#
 
 . ../../include/depinfo.sh
 . ../../include/path.sh
@@ -261,6 +266,10 @@ cpuflags=
 	--enable-filter=atadenoise \
 	--enable-filter=unsharp \
 	--enable-filter=gradfun \
+	--enable-filter=select \
+	--enable-filter=decimate \
+	--enable-filter=deblock \
+	--enable-filter=fieldmatch \
 	--enable-muxer=spdif \
 	--enable-muxer=mpegts \
 	--enable-muxer=matroska \
