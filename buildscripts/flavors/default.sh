@@ -29,6 +29,12 @@
 # pullup GPL). Hepsi LGPL 2.1+; uygulamada kendiliginden acilmaz. TV'lerdeki
 # gomulu yolda (mediacodec_embed) yazilim filtresi hic calismaz.
 #
+# MOTOR PAKETI (2026-10-29, sahip onayi, Windows win-v7 ile ayni): astats,
+# ebur128, silencedetect, freezedetect, dialoguenhance, speechnorm, bbox ve
+# kapali altyazi cozucusu ccaption (codec adi cc_dec; configure adi ccaption).
+# cropdetect BILEREK YOK: ffmpeg 6.0 configure'da cropdetect_filter_deps="gpl",
+# bu derleme --disable-gpl; siyah kenar olcumu icin LGPL bbox kullanilir.
+#
 
 . ../../include/depinfo.sh
 . ../../include/path.sh
@@ -173,6 +179,7 @@ cpuflags=
 	--enable-decoder=vplayer \
 	--enable-decoder=webvtt \
 	--enable-decoder=movtext \
+	--enable-decoder=ccaption \
 	\
 	--enable-demuxer=concat \
 	--enable-demuxer=data \
@@ -275,6 +282,13 @@ cpuflags=
 	--enable-muxer=matroska \
 	--enable-filter=dynaudnorm \
 	--enable-filter=loudnorm \
+	--enable-filter=astats \
+	--enable-filter=ebur128 \
+	--enable-filter=silencedetect \
+	--enable-filter=freezedetect \
+	--enable-filter=dialoguenhance \
+	--enable-filter=speechnorm \
+	--enable-filter=bbox \
 	\
 	--enable-protocol=async \
 	--enable-protocol=cache \
