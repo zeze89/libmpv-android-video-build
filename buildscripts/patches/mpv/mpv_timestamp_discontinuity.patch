@@ -1,0 +1,100 @@
+From d852155179707f75bfc0a147d1c82b44908fd199 Mon Sep 17 00:00:00 2001
+From: zeze89 <zz89842015@gmail.com>
+Date: Thu, 19 Nov 2026 21:41:06 +0300
+Subject: [PATCH] player: audio timestamp reset resyncs the audio output only
+ (r6)
+
+On an audio timestamp reset resync only the audio output to video instead
+of a full playback reset; decoder, filters and video keep running. With
+lookahead filters (dynaudnorm) the decoder sees the jump seconds before
+video does; the full reset flushed the video decoder mid-GOP and could
+leave audio and video waiting for each other.
+
+mp_decoder_wrapper_get_pts_reset() now consumes the flag (its only caller
+no longer resets the decoder; r4 looped on it, r5's decoder and filter
+reset could stall audio after an AO format change).
+
+calculate_frame_duration: a jump >= the discontinuity tolerance of
+handle_new_frame() uses the nominal frame duration (WARN logged).
+---
+ filters/f_decoder_wrapper.c |  1 +
+ player/audio.c              | 18 ++++++++++++++++--
+ player/video.c              | 20 ++++++++++++++++++++
+ 3 files changed, 37 insertions(+), 2 deletions(-)
+
+diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
+index 433ba19ec7..85d595af73 100644
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -536,6 +536,7 @@ bool mp_decoder_wrapper_get_pts_reset(struct mp_decoder_wrapper *d)
+     struct priv *p = d->f->priv;
+     pthread_mutex_lock(&p->cache_lock);
+     bool res = p->pts_reset;
++    p->pts_reset = false; // consumed; audio.c no longer resets the decoder
+     pthread_mutex_unlock(&p->cache_lock);
+     return res;
+ }
+diff --git a/player/audio.c b/player/audio.c
+index 4ea2d09f94..852233e3a3 100644
+--- a/player/audio.c
++++ b/player/audio.c
+@@ -884,9 +884,23 @@ void fill_audio_out_buffers(struct MPContext *mpctx)
+     if (mpctx->vo_chain && ao_c->track && ao_c->track->dec &&
+         mp_decoder_wrapper_get_pts_reset(ao_c->track->dec))
+     {
+-        MP_WARN(mpctx, "Reset playback due to audio timestamp reset.\n");
+-        reset_playback_state(mpctx);
++        // Resync only the audio output to video instead of a full playback
++        // reset. The full reset flushed the video decoder too; with
++        // lookahead audio filters (dynaudnorm, loudnorm) the decoder sees
++        // the jump seconds before video does, so video was flushed in the
++        // middle of a GOP (broken frames with hwdec) and audio and video
++        // could wait for each other. Decoder and filters keep their data:
++        // audio restarts at the video position and both cross the
++        // discontinuity together; video keeps running meanwhile.
++        MP_WARN(mpctx, "Audio timestamp reset, resyncing audio to video "
++                "(video continues).\n");
++        if (ao_c->queue_filter)
++            mp_filter_reset(ao_c->queue_filter);
++        if (mpctx->ao)
++            ao_reset(mpctx->ao);
++        reset_audio_state(mpctx);
+         mp_wakeup_core(mpctx);
++        return;
+     }
+ 
+     if (mpctx->audio_status == STATUS_SYNCING) {
+diff --git a/player/video.c b/player/video.c
+index e5b0b6b3a2..ed51cc6e3e 100644
+--- a/player/video.c
++++ b/player/video.c
+@@ -971,6 +971,26 @@ static void calculate_frame_duration(struct MPContext *mpctx)
+         double pts1 = mpctx->next_frames[1]->pts;
+         if (pts0 != MP_NOPTS_VALUE && pts1 != MP_NOPTS_VALUE && pts1 >= pts0)
+             duration = pts1 - pts0;
++
++        // A timestamp discontinuity (e.g. HLS EXT-X-DISCONTINUITY) between
++        // these two frames is not a frame duration. handle_new_frame() treats
++        // the same jump as a discontinuity; use the same tolerance here and
++        // fall back to the nominal duration. Otherwise the last frame before
++        // the jump is held for up to 10 seconds, display sync is disabled,
++        // and a VO reconfig for the next frame waits until it is "done".
++        bool is_sparse = vo_c->is_sparse;
++        double tolerance = mpctx->demuxer->ts_resets_possible &&
++                           !is_sparse ? 5 : 1e4;
++        if (duration >= tolerance) {
++            double nominal = demux_duration;
++            if (nominal <= 0 && mpctx->num_past_frames > 1 &&
++                mpctx->past_frames[1].duration > 0 &&
++                mpctx->past_frames[1].duration < tolerance)
++                nominal = mpctx->past_frames[1].duration;
++            MP_WARN(mpctx, "Timestamp discontinuity: %f -> %f, using frame "
++                       "duration %f\n", pts0, pts1, nominal);
++            duration = nominal;
++        }
+     }
+ 
+     // The following code tries to compensate for rounded Matroska timestamps
+-- 
+2.53.0.windows.3
+
