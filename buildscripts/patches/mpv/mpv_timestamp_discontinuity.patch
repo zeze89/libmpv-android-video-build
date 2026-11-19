@@ -1,0 +1,44 @@
+From 4233b01606e9566200c1e41b57a4ce3024b69fc8 Mon Sep 17 00:00:00 2001
+From: zeze89 <zz89842015@gmail.com>
+Date: Thu, 19 Nov 2026 17:19:48 +0300
+Subject: [PATCH] player: nominal frame duration across a timestamp
+ discontinuity (r2: video only, warn level)
+
+---
+ player/video.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/player/video.c b/player/video.c
+index e5b0b6b3a2..ed51cc6e3e 100644
+--- a/player/video.c
++++ b/player/video.c
+@@ -971,6 +971,26 @@ static void calculate_frame_duration(struct MPContext *mpctx)
+         double pts1 = mpctx->next_frames[1]->pts;
+         if (pts0 != MP_NOPTS_VALUE && pts1 != MP_NOPTS_VALUE && pts1 >= pts0)
+             duration = pts1 - pts0;
++
++        // A timestamp discontinuity (e.g. HLS EXT-X-DISCONTINUITY) between
++        // these two frames is not a frame duration. handle_new_frame() treats
++        // the same jump as a discontinuity; use the same tolerance here and
++        // fall back to the nominal duration. Otherwise the last frame before
++        // the jump is held for up to 10 seconds, display sync is disabled,
++        // and a VO reconfig for the next frame waits until it is "done".
++        bool is_sparse = vo_c->is_sparse;
++        double tolerance = mpctx->demuxer->ts_resets_possible &&
++                           !is_sparse ? 5 : 1e4;
++        if (duration >= tolerance) {
++            double nominal = demux_duration;
++            if (nominal <= 0 && mpctx->num_past_frames > 1 &&
++                mpctx->past_frames[1].duration > 0 &&
++                mpctx->past_frames[1].duration < tolerance)
++                nominal = mpctx->past_frames[1].duration;
++            MP_WARN(mpctx, "Timestamp discontinuity: %f -> %f, using frame "
++                       "duration %f\n", pts0, pts1, nominal);
++            duration = nominal;
++        }
+     }
+ 
+     // The following code tries to compensate for rounded Matroska timestamps
+-- 
+2.53.0.windows.3
+
