@@ -1,0 +1,86 @@
+From 894ad0c18c750f00dc274be13890e9b5b20bf412 Mon Sep 17 00:00:00 2001
+From: zeze89 <zz89842015@gmail.com>
+Date: Thu, 19 Nov 2026 18:28:59 +0300
+Subject: [PATCH] player: audio timestamp reset resyncs audio only, video is
+ not flushed (r4)
+
+On an audio timestamp reset do an audio-only resync (like an audio track
+switch) instead of a full playback reset: drop the audio still inside the
+filters and the AO, set audio to SYNCING, keep video running. With lookahead
+filters (dynaudnorm) the decoder sees the jump seconds before video does;
+the full reset flushed the video decoder mid-GOP and could leave audio and
+video waiting for each other.
+
+calculate_frame_duration: a jump >= the discontinuity tolerance of
+handle_new_frame() uses the nominal frame duration (WARN logged).
+---
+ player/audio.c | 20 ++++++++++++++++++--
+ player/video.c | 20 ++++++++++++++++++++
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/player/audio.c b/player/audio.c
+index 4ea2d09f94..8265790842 100644
+--- a/player/audio.c
++++ b/player/audio.c
+@@ -884,9 +884,25 @@ void fill_audio_out_buffers(struct MPContext *mpctx)
+     if (mpctx->vo_chain && ao_c->track && ao_c->track->dec &&
+         mp_decoder_wrapper_get_pts_reset(ao_c->track->dec))
+     {
+-        MP_WARN(mpctx, "Reset playback due to audio timestamp reset.\n");
+-        reset_playback_state(mpctx);
++        // Resync only the audio side, like an audio track switch. A full
++        // playback reset would flush the video decoder too. With lookahead
++        // audio filters (dynaudnorm, loudnorm) the decoder sees the jump
++        // seconds before video reaches it, so the video decoder was flushed
++        // in the middle of a GOP (broken frames with hwdec) and video and
++        // audio could end up waiting for each other. Here the audio tail
++        // still inside the filters is dropped, audio waits in SYNCING until
++        // video crosses its own discontinuity (audio start is delayed to
++        // the video position, video keeps its own clock meanwhile).
++        MP_WARN(mpctx, "Audio timestamp reset, resyncing audio to video "
++                "(video continues).\n");
++        mp_filter_reset(ao_c->filter->f);
++        if (ao_c->queue_filter)
++            mp_filter_reset(ao_c->queue_filter);
++        if (mpctx->ao)
++            ao_reset(mpctx->ao);
++        reset_audio_state(mpctx);
+         mp_wakeup_core(mpctx);
++        return;
+     }
+ 
+     if (mpctx->audio_status == STATUS_SYNCING) {
+diff --git a/player/video.c b/player/video.c
+index e5b0b6b3a2..ed51cc6e3e 100644
+--- a/player/video.c
++++ b/player/video.c
+@@ -971,6 +971,26 @@ static void calculate_frame_duration(struct MPContext *mpctx)
+         double pts1 = mpctx->next_frames[1]->pts;
+         if (pts0 != MP_NOPTS_VALUE && pts1 != MP_NOPTS_VALUE && pts1 >= pts0)
+             duration = pts1 - pts0;
++
++        // A timestamp discontinuity (e.g. HLS EXT-X-DISCONTINUITY) between
++        // these two frames is not a frame duration. handle_new_frame() treats
++        // the same jump as a discontinuity; use the same tolerance here and
++        // fall back to the nominal duration. Otherwise the last frame before
++        // the jump is held for up to 10 seconds, display sync is disabled,
++        // and a VO reconfig for the next frame waits until it is "done".
++        bool is_sparse = vo_c->is_sparse;
++        double tolerance = mpctx->demuxer->ts_resets_possible &&
++                           !is_sparse ? 5 : 1e4;
++        if (duration >= tolerance) {
++            double nominal = demux_duration;
++            if (nominal <= 0 && mpctx->num_past_frames > 1 &&
++                mpctx->past_frames[1].duration > 0 &&
++                mpctx->past_frames[1].duration < tolerance)
++                nominal = mpctx->past_frames[1].duration;
++            MP_WARN(mpctx, "Timestamp discontinuity: %f -> %f, using frame "
++                       "duration %f\n", pts0, pts1, nominal);
++            duration = nominal;
++        }
+     }
+ 
+     // The following code tries to compensate for rounded Matroska timestamps
+-- 
+2.53.0.windows.3
+
